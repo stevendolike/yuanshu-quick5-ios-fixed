@@ -1,7 +1,7 @@
 name: Build Fixed Yuanshu Quick5 Scheme
 
 on:
-  workflow_dispatch: # 支援手動點擊執行
+  workflow_dispatch:
   push:
     branches: [ main, master ]
 
@@ -12,34 +12,44 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
-      - name: Download Original Rime Repo
+      - name: Download and Flatten Original Rime Repo
         run: |
+          mkdir -p src dist
           curl -L -o repo.zip https://codeload.github.com/Ramen-LadyHKG/rime-cangJie5_advanced/zip/refs/heads/main
-          unzip repo.zip
-          cd rime-cangJie5_advanced-main
-          mkdir -p ../dist
-          cp -r * ../dist/
+          unzip repo.zip -d src
+          
+          # 將所有子目錄中的 .yaml 檔案打平複製到 dist 根目錄
+          find src -type f \( -name "*.yaml" -o -name "*.txt" \) -exec cp {} dist/ \;
+          
+          # 檢查關鍵檔案是否存在
+          if [ ! -f "dist/quick5.schema.yaml" ]; then
+            echo "Error: quick5.schema.yaml not found after extraction!"
+            ls -la dist/
+            exit 1
+          fi
 
       - name: Fix YAML Syntax & Dictionary References
         run: |
           cd dist
           
-          # 修正 quick5.schema.yaml 的 dictionary 欄位與結構
+          # 修正 quick5.schema.yaml 的 dictionary 欄位
           python3 -c '
-          import re
-          
+          import re, os
+
           schema_file = "quick5.schema.yaml"
-          with open(schema_file, "r", encoding="utf-8") as f:
-              content = f.read()
-          
-          # 替換錯誤的 dictionary 引用
-          content = re.sub(r"dictionary:\s*cangJie5_advanced\..*", "dictionary: cangJie5_advanced", content)
-          
-          with open(schema_file, "w", encoding="utf-8") as f:
-              f.write(content)
+          if os.path.exists(schema_file):
+              with open(schema_file, "r", encoding="utf-8") as f:
+                  content = f.read()
+              
+              # 強制替換修復 dictionary 寫法
+              content = re.sub(r"dictionary:\s*cangJie5_advanced\..*", "dictionary: cangJie5_advanced", content)
+              
+              with open(schema_file, "w", encoding="utf-8") as f:
+                  f.write(content)
+              print("Successfully patched quick5.schema.yaml")
           '
           
-          # 自動補上標準 default.custom.yaml 檔
+          # 自動補上標準 default.custom.yaml
           cat << 'EOF' > default.custom.yaml
           patch:
             schema_list:
@@ -64,6 +74,6 @@ jobs:
           files: yuanshu-quick5-fixed.zip
           tag_name: v1.0.${{ github.run_number }}
           name: "Fixed Yuanshu Quick5 Release v1.0.${{ github.run_number }}"
-          body: "此版本已透過 GitHub Actions 自動修復 Ramen-LadyHKG 方案中的 YAML 語法衝突，可直接解壓至 iOS 元書輸入法 Rime 根目錄使用。"
+          body: "此版本已透過 GitHub Actions 自動打平目錄結構並修復 YAML 語法衝突，解壓後可直接貼入 iOS 元書輸入法 Rime 根目錄使用。"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
