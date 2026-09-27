@@ -23,25 +23,35 @@ jobs:
         with:
           python-version: '3.x'
 
-      - name: Run Conversion Script
+      - name: Extract & Build TextReplacements
         run: |
           python - << 'EOF'
           import plistlib
           import glob
+          import re
 
           plist_data = []
-          dict_files = glob.glob('**/*.dict.yaml', recursive=True)
+          # 尋找所有 yaml 檔案
+          all_yaml_files = glob.glob('**/*.yaml', recursive=True)
+          
+          print(f"Found total {len(all_yaml_files)} YAML files.")
 
-          for file_path in dict_files:
-              print(f"Processing: {file_path}")
-              with open(file_path, 'r', encoding='utf-8') as f:
+          for file_path in all_yaml_files:
+              # 排除 workflow 或系統設定檔
+              if '.github' in file_path or 'custom' in file_path or 'schema' in file_path:
+                  continue
+              
+              print(f"Reading dictionary file: {file_path}")
+              count_before = len(plist_data)
+              
+              with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
                   in_header = False
                   for line in f:
                       line = line.strip()
                       if not line or line.startswith('#'):
                           continue
                       
-                      # 判定 YAML 表頭開頭與結尾
+                      # 判定 YAML 表頭
                       if line == '---':
                           in_header = True
                           continue
@@ -51,14 +61,23 @@ jobs:
                       if in_header:
                           continue
 
-                      # Rime 詞庫格式為：文字[Tab]編碼
-                      parts = line.split('\t')
-                      if len(parts) >= 2:
-                          word = parts[0]
-                          code = parts[1]
+                      # 處理字詞與編碼分隔（同時支援 Tab 與 多空格，並忽略後方的頻率權重）
+                      # 格式通常為：文字 [Tab/空格] 編碼 [Tab/空格/可選權重]
+                      tokens = re.split(r'\s+', line)
+                      if len(tokens) >= 2:
+                          word = tokens[0]
+                          code = tokens[1]
+                          
+                          # 避開純英文設定檔欄位 (例如 name: xxx, version: xxx)
+                          if ':' in word or word in ['name', 'version', 'sort', 'use_preset_vocabulary']:
+                              continue
+                              
                           plist_data.append({'shortcut': code, 'phrase': word})
+              
+              added = len(plist_data) - count_before
+              print(f"--> Extracted {added} entries from {file_path}")
 
-          print(f"Total extracted entries: {len(plist_data)}")
+          print(f"=== TOTAL EXTRACTED ENTRIES: {len(plist_data)} ===")
 
           with open('TextReplacements.plist', 'wb') as f:
               plistlib.dump(plist_data, f)
@@ -66,7 +85,8 @@ jobs:
 
       - name: Package Rime Schema (For Hamster / Rime App)
         run: |
-          find . -type f \( -name "*.yaml" -o -name "*.yml" \) | zip cangjie5_advanced_ios.zip -@
+          # 抓取所有 yaml 與 txt 檔，打成 zip 給 iOS 倉輸入法使用
+          find . -type f \( -name "*.yaml" -o -name "*.yml" -o -name "*.txt" \) | zip cangjie5_advanced_ios.zip -@
 
       - name: Create Release
         uses: softprops/action-gh-release@v2
@@ -74,7 +94,10 @@ jobs:
         with:
           tag_name: latest
           name: "Latest Auto-Built Rime Schema"
-          body: "最新自動構建的 iOS 適用檔 (包含 .plist 與 .zip 包)。"
+          body: |
+            自動生成的 iOS 適用檔案：
+            1. `TextReplacements.plist`: 適用於 iOS 原生文字替換（經由 Mac 或 iOS 捷徑匯入）。
+            2. `cangjie5_advanced_ios.zip`: 適用於 iOS 倉輸入法 (Hamster) 直接匯入。
           files: |
             TextReplacements.plist
             cangjie5_advanced_ios.zip
