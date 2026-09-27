@@ -10,6 +10,10 @@ on:
 jobs:
   build-and-export:
     runs-on: ubuntu-latest
+    
+    # 補上這段明確聲明寫入權限
+    permissions:
+      contents: write
 
     steps:
       - name: Checkout repository
@@ -28,7 +32,6 @@ jobs:
           import os
 
           plist_data = []
-          # 搜尋所有 .dict.yaml 檔（含子目錄）
           dict_files = glob.glob('**/*.dict.yaml', recursive=True)
 
           for file_path in dict_files:
@@ -51,11 +54,10 @@ jobs:
 
       - name: Package Rime Schema (For Hamster / Rime App)
         run: |
-          # 自動搜尋所有 yaml 檔進行打包
           find . -type f \( -name "*.yaml" -o -name "*.yml" \) | zip cangjie5_advanced_ios.zip -@
 
       - name: Create Release
-        uses: softprops/action-gh-release@v1
+        uses: softprops/action-gh-release@v2 # 建議升級至 v2
         if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
         with:
           tag_name: latest
