@@ -4,9 +4,8 @@ on:
   push:
     branches: [ main, master ]
   schedule:
-    # 每週一 00:00 自動執行一次
     - cron: '0 0 * * 1'
-  workflow_dispatch: # 支援手動觸發
+  workflow_dispatch:
 
 jobs:
   build-and-export:
@@ -29,7 +28,7 @@ jobs:
           import os
 
           plist_data = []
-          # 搜尋資料夾內所有 dict.yaml 檔案
+          # 搜尋所有 .dict.yaml 檔（含子目錄）
           dict_files = glob.glob('**/*.dict.yaml', recursive=True)
 
           for file_path in dict_files:
@@ -44,7 +43,6 @@ jobs:
                           code = parts[1]
                           plist_data.append({'shortcut': code, 'phrase': word})
 
-          # 輸出為 iOS 文字替換格式
           with open('TextReplacements.plist', 'wb') as f:
               plistlib.dump(plist_data, f)
 
@@ -53,8 +51,8 @@ jobs:
 
       - name: Package Rime Schema (For Hamster / Rime App)
         run: |
-          # 打包所有 yaml 檔為 zip，方便直接匯入 iOS 倉輸入法
-          zip -r cangjie5_advanced_ios.zip *.yaml
+          # 自動搜尋所有 yaml 檔進行打包
+          find . -type f \( -name "*.yaml" -o -name "*.yml" \) | zip cangjie5_advanced_ios.zip -@
 
       - name: Create Release
         uses: softprops/action-gh-release@v1
@@ -62,7 +60,7 @@ jobs:
         with:
           tag_name: latest
           name: "Latest Auto-Built Rime Schema"
-          body: "這是在此時間自動構建的最新 iOS 適用檔 (包含 .plist 與 .zip 包)。"
+          body: "最新自動構建的 iOS 適用檔 (包含 .plist 與 .zip 包)。"
           files: |
             TextReplacements.plist
             cangjie5_advanced_ios.zip
