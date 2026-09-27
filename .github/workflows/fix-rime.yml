@@ -1,0 +1,69 @@
+name: Build Fixed Yuanshu Quick5 Scheme
+
+on:
+  workflow_dispatch: # 支援手動點擊執行
+  push:
+    branches: [ main, master ]
+
+jobs:
+  build-and-fix:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Download Original Rime Repo
+        run: |
+          curl -L -o repo.zip https://codeload.github.com/Ramen-LadyHKG/rime-cangJie5_advanced/zip/refs/heads/main
+          unzip repo.zip
+          cd rime-cangJie5_advanced-main
+          mkdir -p ../dist
+          cp -r * ../dist/
+
+      - name: Fix YAML Syntax & Dictionary References
+        run: |
+          cd dist
+          
+          # 修正 quick5.schema.yaml 的 dictionary 欄位與結構
+          python3 -c '
+          import re
+          
+          schema_file = "quick5.schema.yaml"
+          with open(schema_file, "r", encoding="utf-8") as f:
+              content = f.read()
+          
+          # 替換錯誤的 dictionary 引用
+          content = re.sub(r"dictionary:\s*cangJie5_advanced\..*", "dictionary: cangJie5_advanced", content)
+          
+          with open(schema_file, "w", encoding="utf-8") as f:
+              f.write(content)
+          '
+          
+          # 自動補上標準 default.custom.yaml 檔
+          cat << 'EOF' > default.custom.yaml
+          patch:
+            schema_list:
+              - schema: quick5
+          EOF
+
+      - name: Create Zip Release Package
+        run: |
+          cd dist
+          zip -r ../yuanshu-quick5-fixed.zip ./*
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: yuanshu-quick5-fixed
+          path: yuanshu-quick5-fixed.zip
+
+      - name: Release Fixed Package
+        uses: softprops/action-gh-release@v1
+        if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch'
+        with:
+          files: yuanshu-quick5-fixed.zip
+          tag_name: v1.0.${{ github.run_number }}
+          name: "Fixed Yuanshu Quick5 Release v1.0.${{ github.run_number }}"
+          body: "此版本已透過 GitHub Actions 自動修復 Ramen-LadyHKG 方案中的 YAML 語法衝突，可直接解壓至 iOS 元書輸入法 Rime 根目錄使用。"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
