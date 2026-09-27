@@ -1,79 +1,70 @@
-name: Build Fixed Yuanshu Quick5 Scheme
+name: Auto Build & Export for iOS
 
 on:
-  workflow_dispatch:
   push:
     branches: [ main, master ]
+  schedule:
+    # 每週一 00:00 自動執行一次
+    - cron: '0 0 * * 1'
+  workflow_dispatch: # 支援手動觸發
 
 jobs:
-  build-and-fix:
+  build-and-export:
     runs-on: ubuntu-latest
+
     steps:
-      - name: Checkout Repository
+      - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Download and Flatten Original Rime Repo
-        run: |
-          mkdir -p src dist
-          curl -L -o repo.zip https://codeload.github.com/Ramen-LadyHKG/rime-cangJie5_advanced/zip/refs/heads/main
-          unzip repo.zip -d src
-          
-          # 將所有子目錄中的 .yaml 檔案打平複製到 dist 根目錄
-          find src -type f \( -name "*.yaml" -o -name "*.txt" \) -exec cp {} dist/ \;
-          
-          # 檢查關鍵檔案是否存在
-          if [ ! -f "dist/quick5.schema.yaml" ]; then
-            echo "Error: quick5.schema.yaml not found after extraction!"
-            ls -la dist/
-            exit 1
-          fi
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
 
-      - name: Fix YAML Syntax & Dictionary References
+      - name: Run Conversion Script
         run: |
-          cd dist
-          
-          # 修正 quick5.schema.yaml 的 dictionary 欄位
-          python3 -c '
-          import re, os
+          python - << 'EOF'
+          import plistlib
+          import glob
+          import os
 
-          schema_file = "quick5.schema.yaml"
-          if os.path.exists(schema_file):
-              with open(schema_file, "r", encoding="utf-8") as f:
-                  content = f.read()
-              
-              # 強制替換修復 dictionary 寫法
-              content = re.sub(r"dictionary:\s*cangJie5_advanced\..*", "dictionary: cangJie5_advanced", content)
-              
-              with open(schema_file, "w", encoding="utf-8") as f:
-                  f.write(content)
-              print("Successfully patched quick5.schema.yaml")
-          '
-          
-          # 自動補上標準 default.custom.yaml
-          cat << 'EOF' > default.custom.yaml
-          patch:
-            schema_list:
-              - schema: quick5
+          plist_data = []
+          # 搜尋資料夾內所有 dict.yaml 檔案
+          dict_files = glob.glob('**/*.dict.yaml', recursive=True)
+
+          for file_path in dict_files:
+              with open(file_path, 'r', encoding='utf-8') as f:
+                  for line in f:
+                      line = line.strip()
+                      if not line or line.startswith('#') or line.startswith('---') or ':' in line:
+                          continue
+                      parts = line.split('\t')
+                      if len(parts) >= 2:
+                          word = parts[0]
+                          code = parts[1]
+                          plist_data.append({'shortcut': code, 'phrase': word})
+
+          # 輸出為 iOS 文字替換格式
+          with open('TextReplacements.plist', 'wb') as f:
+              plistlib.dump(plist_data, f)
+
+          print(f"Successfully processed {len(plist_data)} entries into TextReplacements.plist")
           EOF
 
-      - name: Create Zip Release Package
+      - name: Package Rime Schema (For Hamster / Rime App)
         run: |
-          cd dist
-          zip -r ../yuanshu-quick5-fixed.zip ./*
+          # 打包所有 yaml 檔為 zip，方便直接匯入 iOS 倉輸入法
+          zip -r cangjie5_advanced_ios.zip *.yaml
 
-      - name: Upload Artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: yuanshu-quick5-fixed
-          path: yuanshu-quick5-fixed.zip
-
-      - name: Release Fixed Package
+      - name: Create Release
         uses: softprops/action-gh-release@v1
-        if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch'
+        if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
         with:
-          files: yuanshu-quick5-fixed.zip
-          tag_name: v1.0.${{ github.run_number }}
-          name: "Fixed Yuanshu Quick5 Release v1.0.${{ github.run_number }}"
-          body: "此版本已透過 GitHub Actions 自動打平目錄結構並修復 YAML 語法衝突，解壓後可直接貼入 iOS 元書輸入法 Rime 根目錄使用。"
+          tag_name: latest
+          name: "Latest Auto-Built Rime Schema"
+          body: "這是在此時間自動構建的最新 iOS 適用檔 (包含 .plist 與 .zip 包)。"
+          files: |
+            TextReplacements.plist
+            cangjie5_advanced_ios.zip
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
