@@ -11,25 +11,6 @@ jobs:
   build-and-export:
     runs-on: ubuntu-latest
     
-    # 補上這段明確聲明寫入權限
-    permissions:
-      contents: write
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4name: Auto Build & Export for iOS
-
-on:
-  push:
-    branches: [ main, master ]
-  schedule:
-    - cron: '0 0 * * 1'
-  workflow_dispatch:
-
-jobs:
-  build-and-export:
-    runs-on: ubuntu-latest
-    
     permissions:
       contents: write
 
@@ -89,56 +70,6 @@ jobs:
 
       - name: Create Release
         uses: softprops/action-gh-release@v2
-        if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
-        with:
-          tag_name: latest
-          name: "Latest Auto-Built Rime Schema"
-          body: "最新自動構建的 iOS 適用檔 (包含 .plist 與 .zip 包)。"
-          files: |
-            TextReplacements.plist
-            cangjie5_advanced_ios.zip
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.x'
-
-      - name: Run Conversion Script
-        run: |
-          python - << 'EOF'
-          import plistlib
-          import glob
-          import os
-
-          plist_data = []
-          dict_files = glob.glob('**/*.dict.yaml', recursive=True)
-
-          for file_path in dict_files:
-              with open(file_path, 'r', encoding='utf-8') as f:
-                  for line in f:
-                      line = line.strip()
-                      if not line or line.startswith('#') or line.startswith('---') or ':' in line:
-                          continue
-                      parts = line.split('\t')
-                      if len(parts) >= 2:
-                          word = parts[0]
-                          code = parts[1]
-                          plist_data.append({'shortcut': code, 'phrase': word})
-
-          with open('TextReplacements.plist', 'wb') as f:
-              plistlib.dump(plist_data, f)
-
-          print(f"Successfully processed {len(plist_data)} entries into TextReplacements.plist")
-          EOF
-
-      - name: Package Rime Schema (For Hamster / Rime App)
-        run: |
-          find . -type f \( -name "*.yaml" -o -name "*.yml" \) | zip cangjie5_advanced_ios.zip -@
-
-      - name: Create Release
-        uses: softprops/action-gh-release@v2 # 建議升級至 v2
         if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
         with:
           tag_name: latest
